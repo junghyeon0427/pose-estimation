@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-# +
 import matplotlib.pyplot as plt
 import torch
 import cv2
@@ -10,11 +8,12 @@ from torchvision import transforms
 import numpy as np
 import os
 
+import boto3
+
 from utils.datasets import letterbox
 from utils.general import non_max_suppression_kpt
 from utils.plots import output_to_keypoint, plot_skeleton_kpts
 
-# +
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 weigths = torch.load('yolov7-w6-pose.pt')
 model = weigths['model']
@@ -38,7 +37,28 @@ out = cv2.VideoWriter(f"result.mp4", cv2.VideoWriter_fourcc(*'mp4v'), 30, (resiz
 
 frame_count = 0
 total_fps = 0 
-# -
+
+# AWS
+ACCESS_KEY_ID = 'key_id'
+ACCESS_SECRET_KEY = 'secret_key'
+BUCKET_NAME = 'bucket_name'
+
+def s3_connection():
+    try:
+        # s3 클라이언트 생성
+        s3 = boto3.client(
+            service_name="s3",
+            region_name="ap-northeast-2",
+            aws_access_key_id=ACCESS_KEY_ID,
+            aws_secret_access_key=ACCESS_SECRET_KEY,
+        )
+    except Exception as e:
+        print(e)
+    else:
+        print("s3 bucket connected!") 
+        return s3
+        
+s3 = s3_connection()
 
 while cap.isOpened():
     
@@ -96,10 +116,26 @@ while cap.isOpened():
                 '''
                 S3로 영상을 보내는 코드 구현 부분
                 '''
-                # 동영상 저장
-                cv2.imshow('image', im0)
+                # 로컬 디렉토리에 동영상 저장
+                cv2.imshow('video', im0)
                 out.write(im0)
                 
+                video = VideoFileClip('result.mp4')
+                duration = video.duration
+                
+                # 10초보다 크면 10초로 자른 영상 저장
+                # 그렇지 않다면 그냥 영상 저장
+                if duration > 10: 
+                    cut_video = video.subclip((duration - 10), duration)
+                
+                cut_video.write_videofile('result.mp4')
+                
+                # s3로 해당 영상 업로드
+                try:
+                    s3.upload_file('result.mp4', BUCKET_NAME, "{버킷에 저장될 파일 이름}")
+                except Exception as e:
+                    print(e)
+                                
                 # cv2.imwrite(filename, im0)
                 # os.remove(filename)
        
